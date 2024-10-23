@@ -1,0 +1,330 @@
+---
+title: "Portland"
+author: "Sandhya Kajeepeta"
+date: "2024-05-07"
+output: html_document
+---
+```{r load packages,echo=FALSE, results=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(sf)
+library(readxl)
+library(pscl)
+library(nlme)
+```
+
+#Portland
+
+```{r}
+c16 <- read_csv("./Data/Portland/CrimeData-2016.csv")
+c17 <- read_csv("./Data/Portland/CrimeData-2017.csv")
+c18 <- read_csv("./Data/Portland/CrimeData-2018.csv")
+```
+
+```{r}
+df <- rbind(c16, c17, c18)
+df$OccurDate <- as.POSIXct(df$OccurDate, format="%m/%d/%Y")
+df$OccurMonth <- format(df$OccurDate, "%Y-%m")
+df <- df %>% filter(OccurDate > "2016-10-14" & OccurDate < "2018-10-16")
+```
+
+```{r}
+pmonthly <- df %>% group_by(OccurMonth) %>% summarize(total_crime = sum(OffenseCount), person_crime=sum(OffenseCount[CrimeAgainst=="Person"]), prop_crime=sum(OffenseCount[CrimeAgainst=="Property"]))
+
+pdaily <- df %>% group_by(OccurDate) %>% summarize(total_crime = sum(OffenseCount), person_crime=sum(OffenseCount[CrimeAgainst=="Person"]), prop_crime=sum(OffenseCount[CrimeAgainst=="Property"]))
+
+```
+
+```{r}
+#plot monthly crime
+
+ggplot(data=pmonthly, mapping=aes(x=OccurMonth, y=total_crime, group=1)) +
+  geom_line() +
+  theme_bw() + theme(legend.key=element_blank()) +
+  ylab("Total reported crime offenses")
+```
+
+```{r}
+#code date of gang database abolition
+dateAbolish <- as.Date("2017-10-15")
+
+pdaily$postAbolish <- (pdaily$OccurDate >= dateAbolish)
+
+pdaily$DateNum <- as.numeric(as.Date(pdaily$OccurDate))
+
+pdaily$DateNumCtr <- pdaily$DateNum - as.numeric(dateAbolish)
+```
+
+##Total crime
+Linear model fit for correlogram
+```{r}
+lmFit1 <- lm(total_crime ~ DateNum, data=pdaily)
+acf(resid(lmFit1))
+```
+
+Crude ITS
+```{r}
+
+glsFit1 <- gls(model = total_crime ~ DateNumCtr + postAbolish + DateNumCtr:postAbolish,
+               data = pdaily,
+               correlation = corARMA(p=7))
+summary(glsFit1)
+```
+Overplot prediction
+```{r}
+#Create prediction dataset
+newdata <- data.frame(DateNumCtr = seq(min(pdaily$DateNumCtr), max(pdaily$DateNumCtr), by=1))
+newdata$postAbolish <- (newdata$DateNumCtr >=0)
+
+#Predict
+newdata$total_crime <- predict(glsFit1, newdata=newdata)
+
+#Join dates back
+temp <- pdaily %>% dplyr::select(DateNumCtr, OccurDate)
+newdata <- left_join(newdata, temp, by="DateNumCtr")
+
+ggplot(data=pdaily, mapping=aes(x=as.Date(OccurDate), y=total_crime, group=1)) +
+  geom_line() +
+  geom_line(data=subset(newdata, DateNumCtr < 0), color="red", size=1.5) +
+  geom_line(data=subset(newdata, DateNumCtr >=0), color="red", size=1.5) +
+  geom_vline(xintercept=as.numeric(as.Date("2017-10-15")), linetype=2) +
+  theme_bw() + theme(legend.key=element_blank()) +
+  ylab("Daily total crime offenses") +
+  xlab(" ") +
+  scale_x_date(date_breaks="4 months", date_labels = "%b %Y")
+ggsave("Portland_total.png", width = 5, height = 3, units = "in")
+```
+##Violent crime
+Linear model fit for correlogram
+```{r}
+lmFit1 <- lm(person_crime ~ DateNum, data=pdaily)
+acf(resid(lmFit1))
+```
+
+Crude ITS
+```{r}
+
+glsFit1 <- gls(model = person_crime ~ DateNumCtr + postAbolish + DateNumCtr:postAbolish,
+               data = pdaily,
+               correlation = corARMA(p=7))
+summary(glsFit1)
+```
+Overplot prediction
+```{r}
+#Create prediction dataset
+newdata <- data.frame(DateNumCtr = seq(min(pdaily$DateNumCtr), max(pdaily$DateNumCtr), by=1))
+newdata$postAbolish <- (newdata$DateNumCtr >=0)
+
+#Predict
+newdata$person_crime <- predict(glsFit1, newdata=newdata)
+
+#Join dates back
+temp <- pdaily %>% dplyr::select(DateNumCtr, OccurDate)
+newdata <- left_join(newdata, temp, by="DateNumCtr")
+
+ggplot(data=pdaily, mapping=aes(x=as.Date(OccurDate), y=person_crime, group=1)) +
+  geom_line() +
+  geom_line(data=subset(newdata, DateNumCtr < 0), color="red", size=1.5) +
+  geom_line(data=subset(newdata, DateNumCtr >=0), color="red", size=1.5) +
+  geom_vline(xintercept=as.numeric(as.Date("2017-10-15")), linetype=2) +
+  theme_bw() + theme(legend.key=element_blank()) +
+  ylab("Daily violent crime offenses") +
+  xlab(" ") +
+  scale_x_date(date_breaks="4 months", date_labels = "%b %Y")
+ggsave("Portland_violent.png", width = 5, height = 3, units = "in")
+```
+
+##Property crime
+Linear model fit for correlogram
+```{r}
+lmFit1 <- lm(prop_crime ~ DateNum, data=pdaily)
+acf(resid(lmFit1))
+```
+
+Crude ITS
+```{r}
+
+glsFit1 <- gls(model = prop_crime ~ DateNumCtr + postAbolish + DateNumCtr:postAbolish,
+               data = pdaily,
+               correlation = corARMA(p=7))
+summary(glsFit1)
+```
+Overplot prediction
+```{r}
+#Create prediction dataset
+newdata <- data.frame(DateNumCtr = seq(min(pdaily$DateNumCtr), max(pdaily$DateNumCtr), by=1))
+newdata$postAbolish <- (newdata$DateNumCtr >=0)
+
+#Predict
+newdata$prop_crime <- predict(glsFit1, newdata=newdata)
+
+#Join dates back
+temp <- pdaily %>% dplyr::select(DateNumCtr, OccurDate)
+newdata <- left_join(newdata, temp, by="DateNumCtr")
+
+ggplot(data=pdaily, mapping=aes(x=as.Date(OccurDate), y=prop_crime, group=1)) +
+  geom_line() +
+  geom_line(data=subset(newdata, DateNumCtr < 0), color="red", size=1.5) +
+  geom_line(data=subset(newdata, DateNumCtr >=0), color="red", size=1.5) +
+  geom_vline(xintercept=as.numeric(as.Date("2017-10-15")), linetype=2) +
+  theme_bw() + theme(legend.key=element_blank()) +
+  ylab("Daily property crime offenses") +
+  xlab(" ") +
+  scale_x_date(date_breaks="4 months", date_labels = "%b %Y")
+ggsave("Portland_property.png", width = 5, height = 3, units = "in")
+```
+
+
+#Chicago
+
+```{r}
+c <- read_csv("./Data/Chicago/Crimes_-_2001_to_Present.csv")
+c$Date <- as.POSIXct(c$Date, format="%m/%d/%Y %H:%M:%S")
+c$OccurDate <- as.Date(format(c$Date, "%Y-%m-%d"))
+```
+
+```{r}
+#define person/violent and property
+c$CrimeAgainst <- ifelse(c$`Primary Type` %in% c("ASSAULT","BATTERY","CRIMINAL SEXUAL ASSAULT","HOMICIDE","HUMAN TRAFFICKING","KIDNAPPING","OFFENSE INVOLVING CHILDREN","SEX OFFENSE","STALKING"), "Person", ifelse(c$`Primary Type` %in% c("ARSON","BURGLARY","CRIMINAL DAMAGE","DECEPTIVE PRACTICE","MOTOR VEHICLE THEFT","ROBBERY","THEFT"), "Property", NA))
+```
+
+
+```{r}
+cdaily <- c %>% group_by(OccurDate) %>% summarise(total_crime = n(), person_crime=sum(CrimeAgainst=="Person", na.rm=T), prop_crime=sum(CrimeAgainst=="Property", na.rm=T))
+
+```
+
+```{r}
+#code date of gang database abolition
+dateAbolish <- as.Date("2023-09-07")
+
+cdaily$postAbolish <- (cdaily$OccurDate >= dateAbolish)
+
+cdaily$DateNum <- as.numeric(cdaily$OccurDate)
+
+cdaily$DateNumCtr <- cdaily$DateNum - as.numeric(dateAbolish)
+
+cdaily <- cdaily %>% filter(!is.na(OccurDate) & OccurDate!="2024-04-29")
+```
+
+##Total crime
+Linear model fit for correlogram
+```{r}
+lmFit1 <- lm(total_crime ~ DateNum, data=cdaily)
+acf(resid(lmFit1))
+```
+
+Crude ITS
+```{r}
+
+glsFit1 <- gls(model = total_crime ~ DateNumCtr + postAbolish + DateNumCtr:postAbolish,
+               data = cdaily,
+               correlation = corARMA(p=1))
+summary(glsFit1)
+```
+Overplot prediction
+```{r}
+#Create prediction dataset
+newdata <- data.frame(DateNumCtr = seq(min(cdaily$DateNumCtr), max(cdaily$DateNumCtr), by=1))
+newdata$postAbolish <- (newdata$DateNumCtr >=0)
+
+#Predict
+newdata$total_crime <- predict(glsFit1, newdata=newdata)
+
+#Join dates back
+temp <- cdaily %>% dplyr::select(DateNumCtr, OccurDate)
+newdata <- left_join(newdata, temp, by="DateNumCtr")
+
+ggplot(data=cdaily, mapping=aes(x=as.Date(OccurDate), y=total_crime, group=1)) +
+  geom_line() +
+  geom_line(data=subset(newdata, DateNumCtr < 0), color="red", size=1.5) +
+  geom_line(data=subset(newdata, DateNumCtr >=0), color="red", size=1.5) +
+  geom_vline(xintercept=as.numeric(as.Date("2023-09-07")), linetype=2) +
+  theme_bw() + theme(legend.key=element_blank()) +
+  ylab("Daily total crime offenses") +
+  xlab(" ") +
+  scale_x_date(date_breaks="4 months", date_labels = "%b %Y")
+ggsave("Chicago_total.png", width = 5, height = 3, units = "in")
+```
+##Violent crime
+Linear model fit for correlogram
+```{r}
+lmFit1 <- lm(person_crime ~ DateNum, data=cdaily)
+acf(resid(lmFit1))
+```
+
+Crude ITS
+```{r}
+
+glsFit1 <- gls(model = person_crime ~ DateNumCtr + postAbolish + DateNumCtr:postAbolish,
+               data = cdaily,
+               correlation = corARMA(p=1))
+summary(glsFit1)
+```
+Overplot prediction
+```{r}
+#Create prediction dataset
+newdata <- data.frame(DateNumCtr = seq(min(cdaily$DateNumCtr), max(cdaily$DateNumCtr), by=1))
+newdata$postAbolish <- (newdata$DateNumCtr >=0)
+
+#Predict
+newdata$person_crime <- predict(glsFit1, newdata=newdata)
+
+#Join dates back
+temp <- cdaily %>% dplyr::select(DateNumCtr, OccurDate)
+newdata <- left_join(newdata, temp, by="DateNumCtr")
+
+ggplot(data=cdaily, mapping=aes(x=as.Date(OccurDate), y=person_crime, group=1)) +
+  geom_line() +
+  geom_line(data=subset(newdata, DateNumCtr < 0), color="red", size=1.5) +
+  geom_line(data=subset(newdata, DateNumCtr >=0), color="red", size=1.5) +
+  geom_vline(xintercept=as.numeric(as.Date("2023-09-07")), linetype=2) +
+  theme_bw() + theme(legend.key=element_blank()) +
+  ylab("Daily violent crime offenses") +
+  xlab(" ") +
+  scale_x_date(date_breaks="4 months", date_labels = "%b %Y")
+ggsave("Chicago_violent.png", width = 5, height = 3, units = "in")
+```
+
+##Property crime
+Linear model fit for correlogram
+```{r}
+lmFit1 <- lm(prop_crime ~ DateNum, data=cdaily)
+acf(resid(lmFit1))
+```
+
+Crude ITS
+```{r}
+
+glsFit1 <- gls(model = prop_crime ~ DateNumCtr + postAbolish + DateNumCtr:postAbolish,
+               data = cdaily,
+               correlation = corARMA(p=1))
+summary(glsFit1)
+```
+Overplot prediction
+```{r}
+#Create prediction dataset
+newdata <- data.frame(DateNumCtr = seq(min(cdaily$DateNumCtr), max(cdaily$DateNumCtr), by=1))
+newdata$postAbolish <- (newdata$DateNumCtr >=0)
+
+#Predict
+newdata$prop_crime <- predict(glsFit1, newdata=newdata)
+
+#Join dates back
+temp <- cdaily %>% dplyr::select(DateNumCtr, OccurDate)
+newdata <- left_join(newdata, temp, by="DateNumCtr")
+
+ggplot(data=cdaily, mapping=aes(x=as.Date(OccurDate), y=prop_crime, group=1)) +
+  geom_line() +
+  geom_line(data=subset(newdata, DateNumCtr < 0), color="red", size=1.5) +
+  geom_line(data=subset(newdata, DateNumCtr >=0), color="red", size=1.5) +
+  geom_vline(xintercept=as.numeric(as.Date("2023-09-07")), linetype=2) +
+  theme_bw() + theme(legend.key=element_blank()) +
+  ylab("Daily property crime offenses") +
+  xlab(" ") +
+  scale_x_date(date_breaks="4 months", date_labels = "%b %Y")
+ggsave("Chicago_property.png", width = 5, height = 3, units = "in")
+```
+
